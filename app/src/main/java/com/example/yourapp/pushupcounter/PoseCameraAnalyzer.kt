@@ -1,20 +1,20 @@
 package com.example.yourapp.pushupcounter
 
-import androidx.annotation.OptIn
-import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.example.yourapp.pushupcounter.logic.PoseLandmarkerHelper
 
-// This class acts as the "glue" between CameraX and our ViewModel
-// It implements the ImageAnalysis.Analyzer interface
+/**
+ * This class acts as the "glue" between CameraX and our PoseLandmarkerHelper.
+ * It's only job is to pass the ImageProxy to the helper for detection.
+ */
 class PoseCameraAnalyzer(
-    private val viewModel: PushupCounterViewModel
+    private val poseLandmarkerHelper: PoseLandmarkerHelper
 ) : ImageAnalysis.Analyzer {
 
-    @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
         // This is the only thing it does:
-        // Pass the frame to the ViewModel for processing.
-        viewModel.onFrameAnalyzed(imageProxy)
+        // Pass the frame to the helper for processing.
+        poseLandmarkerHelper.detectLiveStream(imageProxy)
     }
 }

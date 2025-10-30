@@ -1,10 +1,9 @@
 package com.example.yourapp.pushupcounter.logic
 
-import com.google.mlkit.vision.pose.Pose
-import com.google.mlkit.vision.pose.PoseLandmark
-import kotlin.math.atan2
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import kotlin.math.abs
-
+import kotlin.math.atan2
 // Defines the two states of a pushup
 private enum class RepState {
     UP,
@@ -19,45 +18,51 @@ class PushupRepCounter {
 
     // Thresholds for angles (in degrees)
     companion object {
-        // Elbow angle when "UP"
         private const val UP_ELBOW_ANGLE_THRESHOLD = 150.0
-        // Elbow angle when "DOWN"
         private const val DOWN_ELBOW_ANGLE_THRESHOLD = 90.0
-        // Hip angle to ensure the body is straight
         private const val STRAIGHT_BODY_ANGLE_THRESHOLD = 150.0
-        // Minimum visibility to be considered a valid pose
+        // MediaPipe uses 'visibility' score (0.0 to 1.0)
         private const val VISIBILITY_THRESHOLD = 0.8f
     }
 
-    fun analyzePose(pose: Pose): Pair<Int, String> {
-        // Get all visible landmarks
-        val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
-        val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
-        val leftElbow = pose.getPoseLandmark(PoseLandmark.LEFT_ELBOW)
-        val rightElbow = pose.getPoseLandmark(PoseLandmark.RIGHT_ELBOW)
-        val leftWrist = pose.getPoseLandmark(PoseLandmark.LEFT_WRIST)
-        val rightWrist = pose.getPoseLandmark(PoseLandmark.RIGHT_WRIST)
-        val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
-        val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
-        val leftKnee = pose.getPoseLandmark(PoseLandmark.LEFT_KNEE)
-        val rightKnee = pose.getPoseLandmark(PoseLandmark.RIGHT_KNEE)
+    fun analyzePose(poseResult: PoseLandmarkerResult): Pair<Int, String> {
+        // Check if any poses were detected
+        if (poseResult.landmarks().isEmpty()) {
+            lastInstruction = "Keep your whole body in frame."
+            return repCount to lastInstruction
+        }
 
-        val landmarks = listOf(
+        // Get the landmarks for the first (and only) detected person
+        val landmarks = poseResult.landmarks()[0]
+
+        // Get all visible landmarks using MediaPipe's constants
+        val leftShoulder = landmarks[11]
+        val rightShoulder = landmarks[12]
+        val leftElbow = landmarks[13]
+        val rightElbow = landmarks[14]
+        val leftWrist = landmarks[15]
+        val rightWrist = landmarks[16]
+        val leftHip = landmarks[23]
+        val rightHip = landmarks[24]
+        val leftKnee = landmarks[25]
+        val rightKnee = landmarks[26]
+
+        val landmarkList = listOf(
             leftShoulder, rightShoulder, leftElbow, rightElbow,
             leftWrist, rightWrist, leftHip, rightHip, leftKnee, rightKnee
         )
 
-        // Check if all necessary landmarks are visible
-        if (landmarks.any { it == null || it.inFrameLikelihood < VISIBILITY_THRESHOLD }) {
+        // Check if all landmarks are visible
+        if (landmarkList.any { it.visibility() < VISIBILITY_THRESHOLD }) {
             lastInstruction = "Keep your whole body in frame."
             return repCount to lastInstruction
         }
 
         // Calculate angles
-        val leftElbowAngle = getAngle(leftShoulder!!, leftElbow!!, leftWrist!!)
-        val rightElbowAngle = getAngle(rightShoulder!!, rightElbow!!, rightWrist!!)
-        val leftHipAngle = getAngle(leftShoulder, leftHip!!, leftKnee!!)
-        val rightHipAngle = getAngle(rightShoulder, rightHip!!, rightKnee!!)
+        val leftElbowAngle = getAngle(leftShoulder, leftElbow, leftWrist)
+        val rightElbowAngle = getAngle(rightShoulder, rightElbow, rightWrist)
+        val leftHipAngle = getAngle(leftShoulder, leftHip, leftKnee)
+        val rightHipAngle = getAngle(rightShoulder, rightHip, rightKnee)
 
         // Check for straight body
         val isBodyStraight = leftHipAngle > STRAIGHT_BODY_ANGLE_THRESHOLD &&
@@ -68,11 +73,9 @@ class PushupRepCounter {
             return repCount to lastInstruction
         }
 
-        // Check for "DOWN" position
         val isDownPosition = leftElbowAngle < DOWN_ELBOW_ANGLE_THRESHOLD &&
                 rightElbowAngle < DOWN_ELBOW_ANGLE_THRESHOLD
 
-        // Check for "UP" position
         val isUpPosition = leftElbowAngle > UP_ELBOW_ANGLE_THRESHOLD &&
                 rightElbowAngle > UP_ELBOW_ANGLE_THRESHOLD
 
@@ -89,7 +92,7 @@ class PushupRepCounter {
             RepState.DOWN -> {
                 if (isUpPosition) {
                     currentState = RepState.UP
-                    repCount++ // Increment rep count on UP transition
+                    repCount++
                     lastInstruction = "Go down!"
                 } else {
                     lastInstruction = "Go up!"
@@ -102,20 +105,19 @@ class PushupRepCounter {
 
     // Helper function to calculate the angle between three points
     private fun getAngle(
-        firstPoint: PoseLandmark,
-        midPoint: PoseLandmark,
-        lastPoint: PoseLandmark
+        firstPoint: NormalizedLandmark,
+        midPoint: NormalizedLandmark,
+        lastPoint: NormalizedLandmark
     ): Double {
         var angle = Math.toDegrees(
             (atan2(
-                lastPoint.position.y - midPoint.position.y,
-                lastPoint.position.x - midPoint.position.x
+                lastPoint.y() - midPoint.y(),
+                lastPoint.x() - midPoint.x()
             ) - atan2(
-                firstPoint.position.y - midPoint.position.y,
-                firstPoint.position.x - midPoint.position.x
+                firstPoint.y() - midPoint.y(),
+                firstPoint.x() - midPoint.x()
             )).toDouble()
         )
-        // Ensure the angle is positive
         angle = abs(angle)
         if (angle > 180) {
             angle = 360.0 - angle
